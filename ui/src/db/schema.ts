@@ -1,3 +1,4 @@
+import type { InferSelectModel } from "drizzle-orm";
 import {
   pgTable,
   text,
@@ -86,6 +87,8 @@ export const chats = pgTable("chats", {
     .default("private"),
 });
 
+export type Chat = InferSelectModel<typeof chats>;
+
 export const messageDeprecated = pgTable("messages", {
   id: text("id").primaryKey(),
   chatId: text("chat_id")
@@ -107,6 +110,8 @@ export const messages = pgTable("messages_v2", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export type DBMessage = InferSelectModel<typeof messages>;
+
 export const votes = pgTable(
   "votes",
   {
@@ -122,6 +127,8 @@ export const votes = pgTable(
     pk: primaryKey({ columns: [table.chatId, table.messageId] }),
   })
 );
+
+export type Vote = InferSelectModel<typeof votes>;
 
 export const documents = pgTable(
   "documents",

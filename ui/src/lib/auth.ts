@@ -1,6 +1,5 @@
-import { betterAuth, BetterAuthOptions } from "better-auth";
-import { env } from "@/env";
-import { admin, customSession, apiKey, openAPI } from "better-auth/plugins";
+import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { admin, openAPI } from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
 import { headers } from "next/headers";
 import { db } from "@/db";
@@ -14,12 +13,12 @@ const options = {
   database: drizzleAdapter(db, {
     provider: "pg", // or "pg" or "mysql"
     usePlural: true,
-  }), 
+  }),
   emailAndPassword: {
     enabled: true,
-    async sendResetPassword(data, request) {
+    async sendResetPassword() {
       // Send an email to the user with a link to reset their password
-  },
+    },
   },
   session: {
     cookieCache: {

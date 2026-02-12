@@ -3,7 +3,6 @@ import {
   users,
   sessions,
   accounts,
-  verifications,
   chats,
   messages,
   votes,

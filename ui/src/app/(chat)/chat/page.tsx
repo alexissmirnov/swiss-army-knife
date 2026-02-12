@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
-import { auth } from "@/app/(auth)/auth";
+import { getServerSession } from "@/lib/auth";
 import { Chat } from "@/components/chat";
 import { DataStreamHandler } from "@/components/data-stream-handler";
 import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
@@ -16,7 +16,7 @@ export default function Page() {
 }
 
 async function NewChatPage() {
-  const session = await auth();
+  const session = await getServerSession();
 
   if (!session?.user) {
     redirect("/signin");

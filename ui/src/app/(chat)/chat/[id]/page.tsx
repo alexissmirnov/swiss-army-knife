@@ -2,11 +2,11 @@ import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 
-import { auth } from "@/app/(auth)/auth";
+import { getServerSession } from "@/lib/auth";
 import { Chat } from "@/components/chat";
 import { DataStreamHandler } from "@/components/data-stream-handler";
 import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
-import { getChatById, getMessagesByChatId } from "@/lib/db/queries";
+import { getChatById, getMessagesByChatId } from "@/db/queries";
 import { convertToUIMessages } from "@/lib/utils";
 
 export default function Page(props: { params: Promise<{ id: string }> }) {
@@ -25,7 +25,7 @@ async function ChatPage({ params }: { params: Promise<{ id: string }> }) {
     redirect("/chat");
   }
 
-  const session = await auth();
+  const session = await getServerSession();
 
   if (!session?.user) {
     redirect("/signin");

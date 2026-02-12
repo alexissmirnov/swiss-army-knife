@@ -4,18 +4,12 @@ import { isTestEnvironment } from "../constants";
 
 export const myProvider = isTestEnvironment
   ? (() => {
-      const {
-        artifactModel,
-        chatModel,
-        reasoningModel,
-        titleModel,
-      } = require("./models.mock");
+      const { chatModel, reasoningModel, titleModel } = require("./models.mock");
       return customProvider({
         languageModels: {
           "chat-model": chatModel,
           "chat-model-reasoning": reasoningModel,
           "title-model": titleModel,
-          "artifact-model": artifactModel,
         },
       });
     })()
@@ -35,13 +29,6 @@ export function getLanguageModel(modelId: string) {
 export function getTitleModel() {
   if (isTestEnvironment && myProvider) {
     return myProvider.languageModel("title-model");
-  }
-  return openai("gpt-4.1-mini");
-}
-
-export function getArtifactModel() {
-  if (isTestEnvironment && myProvider) {
-    return myProvider.languageModel("artifact-model");
   }
   return openai("gpt-4.1-mini");
 }
