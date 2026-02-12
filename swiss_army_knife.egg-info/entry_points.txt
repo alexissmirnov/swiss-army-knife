@@ -1,0 +1,2 @@
+[console_scripts]
+sak-cli = app.cli:app
