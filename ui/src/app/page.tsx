@@ -1,15 +1,13 @@
-"use client";
+import { redirect } from "next/navigation";
+import { Chat } from "@/components/chat";
+import { getServerSession } from "@/lib/auth";
 
-import Image from "next/image";
-import Link from "next/link";
-import { authClient } from "@/lib/auth-client";
+export default async function Home() {
+  const session = await getServerSession();
 
-export default function Home() {
+  if (!session?.user) {
+    redirect("/signin");
+  }
 
-  return (
-    <div>
-      <h1>Hello World</h1>
-    </div>
-  )
-
+  return <Chat />;
 }
