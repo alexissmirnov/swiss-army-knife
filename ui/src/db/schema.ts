@@ -1,4 +1,13 @@
-import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  timestamp,
+  boolean,
+  json,
+  primaryKey,
+  foreignKey,
+  varchar,
+} from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -64,3 +73,111 @@ export const verifications = pgTable("verifications", {
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
 });
+
+export const chats = pgTable("chats", {
+  id: text("id").primaryKey(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  title: text("title").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  visibility: varchar("visibility", { enum: ["public", "private"] })
+    .notNull()
+    .default("private"),
+});
+
+export const messageDeprecated = pgTable("messages", {
+  id: text("id").primaryKey(),
+  chatId: text("chat_id")
+    .notNull()
+    .references(() => chats.id, { onDelete: "cascade" }),
+  role: text("role").notNull(),
+  content: json("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const messages = pgTable("messages_v2", {
+  id: text("id").primaryKey(),
+  chatId: text("chat_id")
+    .notNull()
+    .references(() => chats.id, { onDelete: "cascade" }),
+  role: text("role").notNull(),
+  parts: json("parts").notNull(),
+  attachments: json("attachments").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const votes = pgTable(
+  "votes",
+  {
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    messageId: text("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    isUpvoted: boolean("is_upvoted").notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.chatId, table.messageId] }),
+  })
+);
+
+export const documents = pgTable(
+  "documents",
+  {
+    id: text("id").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    title: text("title").notNull(),
+    content: text("content"),
+    kind: varchar("kind", { enum: ["text", "code", "image", "sheet"] })
+      .notNull()
+      .default("text"),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.id, table.createdAt] }),
+  })
+);
+
+export const suggestions = pgTable(
+  "suggestions",
+  {
+    id: text("id").notNull(),
+    documentId: text("document_id").notNull(),
+    documentCreatedAt: timestamp("document_created_at").notNull(),
+    originalText: text("original_text").notNull(),
+    suggestedText: text("suggested_text").notNull(),
+    description: text("description"),
+    isResolved: boolean("is_resolved").notNull().default(false),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.id] }),
+    documentRef: foreignKey({
+      columns: [table.documentId, table.documentCreatedAt],
+      foreignColumns: [documents.id, documents.createdAt],
+    }),
+  })
+);
+
+export const streams = pgTable(
+  "streams",
+  {
+    id: text("id").notNull(),
+    chatId: text("chat_id").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.id] }),
+    chatRef: foreignKey({
+      columns: [table.chatId],
+      foreignColumns: [chats.id],
+    }),
+  })
+);

@@ -92,7 +92,7 @@ export default function SignUp() {
 								email,
 								password,
 								name,
-								callbackURL: "/dashboard",
+								callbackURL: "/chat",
 								fetchOptions: {
 									onResponse: () => {
 										setLoading(false);
@@ -103,8 +103,8 @@ export default function SignUp() {
 									onError: (ctx) => {
 										toast.error(ctx.error.message);
 									},
-									onSuccess: async () => {
-										router.push("/dashboard");
+									onSuccess: () => {
+										router.push("/chat");
 									},
 								},
 							});

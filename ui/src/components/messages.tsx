@@ -1,25 +1,47 @@
 import type { UseChatHelpers } from "@ai-sdk/react";
-import type { UIMessage } from "ai";
 import { ArrowDownIcon } from "lucide-react";
 import { useMessages } from "@/hooks/use-messages";
-import { Greeting } from "@/components/greeting";
-import { ChatMessage, ThinkingMessage } from "@/components/message";
+import type { Vote } from "@/lib/db/schema";
+import type { ChatMessage } from "@/lib/types";
+import { useDataStream } from "./data-stream-provider";
+import { Greeting } from "./greeting";
+import { PreviewMessage, ThinkingMessage } from "./message";
 
 type MessagesProps = {
-  status: UseChatHelpers<UIMessage>["status"];
-  messages: UIMessage[];
+  addToolApprovalResponse: UseChatHelpers<ChatMessage>["addToolApprovalResponse"];
+  chatId: string;
+  status: UseChatHelpers<ChatMessage>["status"];
+  votes: Vote[] | undefined;
+  messages: ChatMessage[];
+  setMessages: UseChatHelpers<ChatMessage>["setMessages"];
+  regenerate: UseChatHelpers<ChatMessage>["regenerate"];
+  isReadonly: boolean;
+  isArtifactVisible: boolean;
+  selectedModelId: string;
 };
 
-function PureMessages({ status, messages }: MessagesProps) {
+function PureMessages({
+  addToolApprovalResponse,
+  chatId,
+  status,
+  votes,
+  messages,
+  setMessages,
+  regenerate,
+  isReadonly,
+  selectedModelId: _selectedModelId,
+}: MessagesProps) {
   const {
     containerRef: messagesContainerRef,
     endRef: messagesEndRef,
     isAtBottom,
     scrollToBottom,
-  } = useMessages({ status });
+    hasSentMessage,
+  } = useMessages({
+    status,
+  });
 
-  const shouldShowThinking =
-    status === "submitted" && messages.at(-1)?.role === "user";
+  useDataStream();
 
   return (
     <div className="relative flex-1">
@@ -30,11 +52,35 @@ function PureMessages({ status, messages }: MessagesProps) {
         <div className="mx-auto flex min-w-0 max-w-4xl flex-col gap-4 px-2 py-4 md:gap-6 md:px-4">
           {messages.length === 0 && <Greeting />}
 
-          {messages.map((message) => (
-            <ChatMessage key={message.id} message={message} />
+          {messages.map((message, index) => (
+            <PreviewMessage
+              addToolApprovalResponse={addToolApprovalResponse}
+              chatId={chatId}
+              isLoading={
+                status === "streaming" && messages.length - 1 === index
+              }
+              isReadonly={isReadonly}
+              key={message.id}
+              message={message}
+              regenerate={regenerate}
+              requiresScrollPadding={
+                hasSentMessage && index === messages.length - 1
+              }
+              setMessages={setMessages}
+              vote={
+                votes
+                  ? votes.find((vote) => vote.messageId === message.id)
+                  : undefined
+              }
+            />
           ))}
 
-          {shouldShowThinking && <ThinkingMessage />}
+          {status === "submitted" &&
+            !messages.some((msg) =>
+              msg.parts?.some(
+                (part) => "state" in part && part.state === "approval-responded"
+              )
+            ) && <ThinkingMessage />}
 
           <div
             className="min-h-[24px] min-w-[24px] shrink-0"

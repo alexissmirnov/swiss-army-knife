@@ -91,7 +91,6 @@ export const PromptInputTextarea = ({
       }}
       onKeyDown={handleKeyDown}
       placeholder={placeholder}
-      style={{ minHeight, maxHeight }}
       {...props}
     />
   );

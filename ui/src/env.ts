@@ -5,6 +5,8 @@ export const env = createEnv({
   server: {
     DATABASE_URL: z.url(),
     OPENAI_API_KEY: z.string().min(1),
+    BLOB_READ_WRITE_TOKEN: z.string().optional(),
+    REDIS_URL: z.string().optional(),
   },
   client: {
 

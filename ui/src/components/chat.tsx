@@ -2,131 +2,234 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { SquareIcon } from "lucide-react";
-import type { FormEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  PromptInput,
-  PromptInputModelSelect,
-  PromptInputModelSelectContent,
-  PromptInputModelSelectItem,
-  PromptInputModelSelectTrigger,
-  PromptInputModelSelectValue,
-  PromptInputSubmit,
-  PromptInputTextarea,
-  PromptInputToolbar,
-  PromptInputTools,
-} from "@/components/elements/prompt-input";
-import { Messages } from "@/components/messages";
-import { Button } from "@/components/ui/button";
-import { chatModels, DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import useSWR, { useSWRConfig } from "swr";
+import { unstable_serialize } from "swr/infinite";
+import { ChatHeader } from "@/components/chat-header";
+import { useArtifactSelector } from "@/hooks/use-artifact";
+import { useAutoResume } from "@/hooks/use-auto-resume";
+import { useChatVisibility } from "@/hooks/use-chat-visibility";
+import type { Vote } from "@/lib/db/schema";
+import { ChatSDKError } from "@/lib/errors";
+import type { Attachment, ChatMessage } from "@/lib/types";
+import { fetcher, fetchWithErrorHandlers, generateUUID } from "@/lib/utils";
+import { Artifact } from "./artifact";
+import { useDataStream } from "./data-stream-provider";
+import { Messages } from "./messages";
+import { MultimodalInput } from "./multimodal-input";
+import { getChatHistoryPaginationKey } from "./sidebar-history";
+import { toast } from "./toast";
+import type { VisibilityType } from "./visibility-selector";
 
-export function Chat() {
-  const chatId = useRef(crypto.randomUUID()).current;
-  const [input, setInput] = useState("");
-  const [selectedModelId, setSelectedModelId] = useState(DEFAULT_CHAT_MODEL);
+export function Chat({
+  id,
+  initialMessages,
+  initialChatModel,
+  initialVisibilityType,
+  isReadonly,
+  autoResume,
+}: {
+  id: string;
+  initialMessages: ChatMessage[];
+  initialChatModel: string;
+  initialVisibilityType: VisibilityType;
+  isReadonly: boolean;
+  autoResume: boolean;
+}) {
+  const router = useRouter();
 
-  useEffect(() => {
-    const stored = window.localStorage.getItem("chat-model");
-    if (stored) {
-      setSelectedModelId(stored);
-    }
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem("chat-model", selectedModelId);
-  }, [selectedModelId]);
-
-  const transport = useMemo(
-    () =>
-      new DefaultChatTransport({
-        api: "/api/chat",
-        prepareSendMessagesRequest(request) {
-          return {
-            body: {
-              messages: request.messages,
-              selectedChatModel: selectedModelId,
-            },
-          };
-        },
-      }),
-    [selectedModelId]
-  );
-
-  const { messages, sendMessage, status, stop } = useChat({
-    id: chatId,
-    transport,
-    messages: [],
-    generateId: () => crypto.randomUUID(),
+  const { visibilityType } = useChatVisibility({
+    chatId: id,
+    initialVisibilityType,
   });
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const trimmed = input.trim();
-    if (!trimmed) {
-      return;
+  const { mutate } = useSWRConfig();
+
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      // When user navigates back/forward, refresh to sync with URL
+      router.refresh();
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [router]);
+  const { setDataStream } = useDataStream();
+
+  const [input, setInput] = useState<string>("");
+  const [currentModelId, setCurrentModelId] = useState(initialChatModel);
+  const currentModelIdRef = useRef(currentModelId);
+
+  useEffect(() => {
+    currentModelIdRef.current = currentModelId;
+  }, [currentModelId]);
+
+  const {
+    messages,
+    setMessages,
+    sendMessage,
+    status,
+    stop,
+    regenerate,
+    resumeStream,
+    addToolApprovalResponse,
+  } = useChat<ChatMessage>({
+    id,
+    messages: initialMessages,
+    generateId: generateUUID,
+    sendAutomaticallyWhen: ({ messages: currentMessages }) => {
+      const lastMessage = currentMessages.at(-1);
+      const shouldContinue =
+        lastMessage?.parts?.some(
+          (part) =>
+            "state" in part &&
+            part.state === "approval-responded" &&
+            "approval" in part &&
+            (part.approval as { approved?: boolean })?.approved === true
+        ) ?? false;
+      return shouldContinue;
+    },
+    transport: new DefaultChatTransport({
+      api: "/api/chat",
+      fetch: fetchWithErrorHandlers,
+      prepareSendMessagesRequest(request) {
+        const lastMessage = request.messages.at(-1);
+        const isToolApprovalContinuation =
+          lastMessage?.role !== "user" ||
+          request.messages.some((msg) =>
+            msg.parts?.some((part) => {
+              const state = (part as { state?: string }).state;
+              return (
+                state === "approval-responded" || state === "output-denied"
+              );
+            })
+          );
+
+        return {
+          body: {
+            id: request.id,
+            ...(isToolApprovalContinuation
+              ? { messages: request.messages }
+              : { message: lastMessage }),
+            selectedChatModel: currentModelIdRef.current,
+            selectedVisibilityType: visibilityType,
+            ...request.body,
+          },
+        };
+      },
+    }),
+    onData: (dataPart) => {
+      setDataStream((ds) => (ds ? [...ds, dataPart] : []));
+    },
+    onFinish: () => {
+      mutate(unstable_serialize(getChatHistoryPaginationKey));
+    },
+    onError: (error) => {
+      if (error instanceof ChatSDKError) {
+        toast({
+          type: "error",
+          description: error.message,
+        });
+      }
+    },
+  });
+
+  const searchParams = useSearchParams();
+  const query = searchParams.get("query");
+
+  const [hasAppendedQuery, setHasAppendedQuery] = useState(false);
+
+  useEffect(() => {
+    if (query && !hasAppendedQuery) {
+      sendMessage({
+        role: "user" as const,
+        parts: [{ type: "text", text: query }],
+      });
+
+      setHasAppendedQuery(true);
+      window.history.replaceState({}, "", `/chat/${id}`);
     }
+  }, [query, sendMessage, hasAppendedQuery, id]);
 
-    sendMessage({
-      role: "user",
-      parts: [{ type: "text", text: trimmed }],
-    });
+  const { data: votes } = useSWR<Vote[]>(
+    messages.length >= 2 ? `/api/vote?chatId=${id}` : null,
+    fetcher
+  );
 
-    setInput("");
-  };
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
+
+  useAutoResume({
+    autoResume,
+    initialMessages,
+    resumeStream,
+    setMessages,
+  });
 
   return (
-    <div className="overscroll-behavior-contain flex h-dvh min-w-0 touch-pan-y flex-col bg-background">
-      <Messages messages={messages} status={status} />
+    <>
+      <div className="overscroll-behavior-contain flex h-dvh min-w-0 touch-pan-y flex-col bg-background">
+        <ChatHeader
+          chatId={id}
+          isReadonly={isReadonly}
+          selectedVisibilityType={initialVisibilityType}
+        />
 
-      <div className="sticky bottom-0 z-10 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 pb-3 md:px-4 md:pb-4">
-        <PromptInput onSubmit={handleSubmit}>
-          <PromptInputTextarea
-            data-testid="multimodal-input"
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="Send a message..."
-            value={input}
-          />
-          <PromptInputToolbar className="border-top-0! border-t-0! p-0 shadow-none dark:border-0 dark:border-transparent!">
-            <PromptInputTools className="gap-0 sm:gap-0.5">
-              <PromptInputModelSelect
-                onValueChange={setSelectedModelId}
-                value={selectedModelId}
-              >
-                <PromptInputModelSelectTrigger>
-                  <PromptInputModelSelectValue />
-                </PromptInputModelSelectTrigger>
-                <PromptInputModelSelectContent>
-                  {chatModels.map((model) => (
-                    <PromptInputModelSelectItem key={model.id} value={model.id}>
-                      {model.name}
-                    </PromptInputModelSelectItem>
-                  ))}
-                </PromptInputModelSelectContent>
-              </PromptInputModelSelect>
-            </PromptInputTools>
+        <Messages
+          addToolApprovalResponse={addToolApprovalResponse}
+          chatId={id}
+          isArtifactVisible={isArtifactVisible}
+          isReadonly={isReadonly}
+          messages={messages}
+          regenerate={regenerate}
+          selectedModelId={initialChatModel}
+          setMessages={setMessages}
+          status={status}
+          votes={votes}
+        />
 
-            {status === "streaming" ? (
-              <Button
-                aria-label="Stop generating"
-                className="size-8 rounded-full"
-                onClick={() => stop()}
-                type="button"
-                variant="ghost"
-              >
-                <SquareIcon className="size-4" />
-              </Button>
-            ) : (
-              <PromptInputSubmit
-                className="size-8 rounded-full"
-                data-testid="send-button"
-                disabled={!input.trim()}
-                status={status}
-              />
-            )}
-          </PromptInputToolbar>
-        </PromptInput>
+        <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 pb-3 md:px-4 md:pb-4">
+          {!isReadonly && (
+            <MultimodalInput
+              attachments={attachments}
+              chatId={id}
+              input={input}
+              messages={messages}
+              onModelChange={setCurrentModelId}
+              selectedModelId={currentModelId}
+              selectedVisibilityType={visibilityType}
+              sendMessage={sendMessage}
+              setAttachments={setAttachments}
+              setInput={setInput}
+              setMessages={setMessages}
+              status={status}
+              stop={stop}
+            />
+          )}
+        </div>
       </div>
-    </div>
+
+      <Artifact
+        addToolApprovalResponse={addToolApprovalResponse}
+        attachments={attachments}
+        chatId={id}
+        input={input}
+        isReadonly={isReadonly}
+        messages={messages}
+        regenerate={regenerate}
+        selectedModelId={currentModelId}
+        selectedVisibilityType={visibilityType}
+        sendMessage={sendMessage}
+        setAttachments={setAttachments}
+        setInput={setInput}
+        setMessages={setMessages}
+        status={status}
+        stop={stop}
+        votes={votes}
+      />
+
+    </>
   );
 }
