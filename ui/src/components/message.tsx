@@ -19,7 +19,6 @@ import { MessageActions } from "./message-actions";
 import { MessageEditor } from "./message-editor";
 import { MessageReasoning } from "./message-reasoning";
 import { PreviewAttachment } from "./preview-attachment";
-import { Weather } from "./weather";
 
 const PurePreviewMessage = ({
   addToolApprovalResponse,
@@ -48,6 +47,10 @@ const PurePreviewMessage = ({
   const [optionSelections, setOptionSelections] = useState<
     Record<string, string>
   >({});
+  const [dateSelections, setDateSelections] = useState<Record<string, string>>(
+    {}
+  );
+  const [dateInputs, setDateInputs] = useState<Record<string, string>>({});
 
   const attachmentsFromMessage = message.parts.filter(
     (part) => part.type === "file"
@@ -332,6 +335,124 @@ const PurePreviewMessage = ({
                           No options available.
                         </div>
                       )}
+                    </div>
+                  </div>
+                );
+              }
+
+              return null;
+            }
+
+            if (type === "tool-date-select") {
+              const { state } = part as {
+                state: string;
+                input?: unknown;
+                output?: unknown;
+              };
+              const output =
+                state === "output-available"
+                  ? (part as { output?: unknown }).output
+                  : undefined;
+              const outputRecord =
+                output && typeof output === "object"
+                  ? (output as Record<string, unknown>)
+                  : undefined;
+              const question =
+                typeof outputRecord?.question === "string"
+                  ? outputRecord.question
+                  : "Choose a date.";
+              const resultKey =
+                typeof outputRecord?.resultKey === "string"
+                  ? outputRecord.resultKey.trim()
+                  : "";
+              const min =
+                typeof outputRecord?.min === "string" ? outputRecord.min : undefined;
+              const max =
+                typeof outputRecord?.max === "string" ? outputRecord.max : undefined;
+              const defaultDate =
+                typeof outputRecord?.default === "string"
+                  ? outputRecord.default
+                  : undefined;
+
+              const selectedDate = dateSelections[partKey] ?? "";
+              const currentValue =
+                selectedDate || dateInputs[partKey] || defaultDate || "";
+
+              if (state === "output-available") {
+                return (
+                  <div className="w-full max-w-2xl" key={partKey}>
+                    <div className="space-y-3">
+                      <div className="text-sm font-medium text-foreground">
+                        {question}
+                      </div>
+                      {selectedDate ? (
+                        <div className="text-xs text-muted-foreground">
+                          Selected: {selectedDate}
+                        </div>
+                      ) : null}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          className={cn(
+                            "rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            selectedDate
+                              ? "cursor-not-allowed opacity-60"
+                              : ""
+                          )}
+                          disabled={Boolean(selectedDate)}
+                          max={max}
+                          min={min}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setDateInputs((prev) => ({
+                              ...prev,
+                              [partKey]: nextValue,
+                            }));
+                          }}
+                          type="date"
+                          value={currentValue}
+                        />
+                        <button
+                          className={cn(
+                            "rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent/50",
+                            selectedDate || !currentValue
+                              ? "cursor-not-allowed opacity-60 hover:bg-background"
+                              : ""
+                          )}
+                          disabled={Boolean(selectedDate) || !currentValue}
+                          onClick={() => {
+                            if (selectedDate || !currentValue) {
+                              return;
+                            }
+                            setDateSelections((prev) => ({
+                              ...prev,
+                              [partKey]: currentValue,
+                            }));
+                            setDateInputs((prev) => ({
+                              ...prev,
+                              [partKey]: currentValue,
+                            }));
+                            const payload = resultKey
+                              ? `${resultKey}: ${currentValue}`
+                              : currentValue;
+                            sendMessage({
+                              role: "user",
+                              parts: [
+                                {
+                                  type: "text",
+                                  text: payload,
+                                  ui: {
+                                    hidden: true,
+                                    source: "date-select",
+                                  },
+                                } as any,
+                              ],
+                            });
+                          }}
+                          type="button"
+                        >
+                          Confirm
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );

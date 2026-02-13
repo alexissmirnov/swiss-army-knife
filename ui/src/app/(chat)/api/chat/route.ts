@@ -16,6 +16,7 @@ import { getServerSession } from "@/lib/auth";
 import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
 import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
 import { getLanguageModel } from "@/lib/ai/providers";
+import { dateSelect } from "@/lib/ai/tools/date-select";
 import { optionsSelect } from "@/lib/ai/tools/options-select";
 import { isProductionEnvironment } from "@/lib/constants";
 import {
@@ -87,7 +88,7 @@ function buildActiveTools(
   const chosen = (above.length > 0 ? above : ranked.slice(0, topK)).map(
     (tool) => tool.mcp_name ?? `tool-${tool.name}`
   );
-  const allowed = new Set([...chosen, "options-select"]);
+  const allowed = new Set([...chosen, "options-select", "date-select"]);
   return Array.from(allowed).filter((name) => name in tools);
 }
 
@@ -232,6 +233,7 @@ export async function POST(request: Request) {
       mcpTools;
     const tools = {
       ...mcpToolsWithoutMeta,
+      ["date-select"]: dateSelect,
       ["options-select"]: optionsSelect,
     };
     const activeTools = buildActiveTools(tools, confidenceEval);
@@ -244,15 +246,19 @@ export async function POST(request: Request) {
           temperature: 0.3,
           system: systemPrompt({ selectedChatModel, requestHints }),
           messages: modelMessages,
-          stopWhen: hasToolCall("options-select"),
+          stopWhen: (steps) =>
+            hasToolCall("options-select")(steps) ||
+            hasToolCall("date-select")(steps),
           prepareStep: ({ steps }) => {
             const lastStep = steps.at(-1);
-            const hasOptionsSelectResult = Boolean(
+            const hasSelectableToolResult = Boolean(
               lastStep?.toolResults?.some(
-                (toolResult) => toolResult.toolName === "options-select"
+                (toolResult) =>
+                  toolResult.toolName === "options-select" ||
+                  toolResult.toolName === "date-select"
               )
             );
-            if (hasOptionsSelectResult) {
+            if (hasSelectableToolResult) {
               return { toolChoice: "none", activeTools: [] as string[] };
             }
             return { activeTools };
