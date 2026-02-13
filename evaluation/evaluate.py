@@ -119,9 +119,6 @@ Answer in EXACT JSON format with these keys:
         return all(param in collected for param in required)
 
 
-# -------------------------
-# Scoring helper
-# -------------------------
 def add_scores_to_evaluation(evaluation: dict) -> dict:
     """
     Add numeric scores to an evaluation dict and compute overall score.
@@ -146,8 +143,7 @@ def add_scores_to_evaluation(evaluation: dict) -> dict:
     return evaluation
 
 
-# -------------------------
-# Evaluate a local scenario
+
 # -------------------------
 def evaluate_scenario(scenario: Dict[str, Any], use_llm_judge: bool = True) -> Dict[str, Any]:
     """

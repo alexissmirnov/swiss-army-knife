@@ -77,7 +77,7 @@ def evaluate_api_response(response_json: dict, user_message: str) -> dict:
         "errors": [],
     }
 
-    # Add numeric scores
+   
     result = add_scores_to_evaluation(result)
     return result
 
