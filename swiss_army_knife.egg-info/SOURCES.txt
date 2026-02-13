@@ -8,6 +8,7 @@ app/confidence.py
 app/config.py
 app/llm.py
 app/logging_utils.py
+app/mcp_server.py
 app/models.py
 app/settings.py
 app/store.py

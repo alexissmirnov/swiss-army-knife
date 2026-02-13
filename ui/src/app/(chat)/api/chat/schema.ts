@@ -12,7 +12,13 @@ const filePartSchema = z.object({
   url: z.string().url(),
 });
 
-const partSchema = z.union([textPartSchema, filePartSchema]);
+const toolChoicePartSchema = z.object({
+  type: z.enum(["serviceos-tool-choice"]),
+  toolName: z.string().min(1).max(200),
+  optionId: z.string().min(1).max(200),
+});
+
+const partSchema = z.union([textPartSchema, filePartSchema, toolChoicePartSchema]);
 
 const userMessageSchema = z.object({
   id: z.string().uuid(),

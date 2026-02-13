@@ -12,6 +12,7 @@
     "drizzle:pull": "npx drizzle-kit pull"
   },
   "dependencies": {
+    "@ai-sdk/mcp": "^1.0.0",
     "@ai-sdk/openai": "^3.0.28",
     "@ai-sdk/react": "3.0.86",
     "@codemirror/lang-javascript": "^6.2.2",

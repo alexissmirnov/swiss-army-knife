@@ -1,6 +1,5 @@
-import type { InferUITool, UIMessage } from "ai";
+import type { InferUITool, UIMessage, UIMessagePart } from "ai";
 import { z } from "zod";
-import type { getWeather } from "./ai/tools/get-weather";
 
 export const messageMetadataSchema = z.object({
   createdAt: z.string(),
@@ -8,20 +7,27 @@ export const messageMetadataSchema = z.object({
 
 export type MessageMetadata = z.infer<typeof messageMetadataSchema>;
 
-type weatherTool = InferUITool<typeof getWeather>;
-export type ChatTools = {
-  getWeather: weatherTool;
-};
+export type ChatTools = Record<string, InferUITool<any>>;
 
 export type CustomUIDataTypes = {
   "chat-title": string;
+};
+
+export type ServiceOSToolChoicePart = {
+  type: "serviceos-tool-choice";
+  toolName: string;
+  optionId: string;
 };
 
 export type ChatMessage = UIMessage<
   MessageMetadata,
   CustomUIDataTypes,
   ChatTools
->;
+> & {
+  parts: Array<
+    UIMessagePart<CustomUIDataTypes, ChatTools> | ServiceOSToolChoicePart
+  >;
+};
 
 export type Attachment = {
   name: string;

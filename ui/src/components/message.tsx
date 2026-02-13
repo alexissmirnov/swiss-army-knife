@@ -6,11 +6,13 @@ import type { ChatMessage } from "@/lib/types";
 import { cn, sanitizeText } from "@/lib/utils";
 import { MessageContent } from "./elements/message";
 import { Response } from "./elements/response";
+import { Suggestion, Suggestions } from "./elements/suggestion";
 import {
   Tool,
   ToolContent,
   ToolHeader,
   ToolInput,
+  ToolOutput,
 } from "./elements/tool";
 import { SparklesIcon } from "./icons";
 import { MessageActions } from "./message-actions";
@@ -27,6 +29,7 @@ const PurePreviewMessage = ({
   isLoading,
   setMessages,
   regenerate,
+  sendMessage,
   isReadonly,
   requiresScrollPadding: _requiresScrollPadding,
 }: {
@@ -37,6 +40,7 @@ const PurePreviewMessage = ({
   isLoading: boolean;
   setMessages: UseChatHelpers<ChatMessage>["setMessages"];
   regenerate: UseChatHelpers<ChatMessage>["regenerate"];
+  sendMessage: UseChatHelpers<ChatMessage>["sendMessage"];
   isReadonly: boolean;
   requiresScrollPadding: boolean;
 }) => {
@@ -101,6 +105,14 @@ const PurePreviewMessage = ({
           {message.parts?.map((part, index) => {
             const { type } = part;
             const key = `message-${message.id}-part-${index}`;
+            const partToolCallId =
+              typeof part === "object" &&
+              part !== null &&
+              "toolCallId" in part &&
+              typeof (part as { toolCallId?: unknown }).toolCallId === "string"
+                ? (part as { toolCallId: string }).toolCallId
+                : undefined;
+            const partKey = partToolCallId ? `tool-${partToolCallId}` : key;
 
             if (type === "reasoning") {
               const hasContent = part.text?.trim().length > 0;
@@ -109,7 +121,7 @@ const PurePreviewMessage = ({
                 return (
                   <MessageReasoning
                     isLoading={isLoading || isStreaming}
-                    key={key}
+                    key={partKey}
                     reasoning={part.text || ""}
                   />
                 );
@@ -119,7 +131,7 @@ const PurePreviewMessage = ({
             if (type === "text") {
               if (mode === "view") {
                 return (
-                  <div key={key}>
+                  <div key={partKey}>
                     <MessageContent
                       className={cn({
                         "wrap-break-word w-fit rounded-2xl px-3 py-2 text-right text-white":
@@ -142,10 +154,7 @@ const PurePreviewMessage = ({
 
               if (mode === "edit") {
                 return (
-                  <div
-                    className="flex w-full flex-row items-start gap-3"
-                    key={key}
-                  >
+                  <div className="flex w-full flex-row items-start gap-3" key={partKey}>
                     <div className="size-8" />
                     <div className="min-w-0 flex-1">
                       <MessageEditor
@@ -174,7 +183,7 @@ const PurePreviewMessage = ({
 
               if (state === "output-available") {
                 return (
-                  <div className={widthClass} key={toolCallId}>
+                  <div className={widthClass} key={partKey}>
                     <Weather weatherAtLocation={part.output} />
                   </div>
                 );
@@ -182,7 +191,7 @@ const PurePreviewMessage = ({
 
               if (isDenied) {
                 return (
-                  <div className={widthClass} key={toolCallId}>
+                  <div className={widthClass} key={partKey}>
                     <Tool className="w-full" defaultOpen={true}>
                       <ToolHeader
                         state="output-denied"
@@ -200,7 +209,7 @@ const PurePreviewMessage = ({
 
               if (state === "approval-responded") {
                 return (
-                  <div className={widthClass} key={toolCallId}>
+                  <div className={widthClass} key={partKey}>
                     <Tool className="w-full" defaultOpen={true}>
                       <ToolHeader state={state} type="tool-getWeather" />
                       <ToolContent>
@@ -212,7 +221,7 @@ const PurePreviewMessage = ({
               }
 
               return (
-                <div className={widthClass} key={toolCallId}>
+                <div className={widthClass} key={partKey}>
                   <Tool className="w-full" defaultOpen={true}>
                     <ToolHeader state={state} type="tool-getWeather" />
                     <ToolContent>
@@ -249,6 +258,163 @@ const PurePreviewMessage = ({
                           </button>
                         </div>
                       )}
+                    </ToolContent>
+                  </Tool>
+                </div>
+              );
+            }
+
+            if (type === "tool-serviceos_disambiguate") {
+              const { toolCallId, state } = part;
+              const widthClass = "w-[min(100%,560px)]";
+              const output =
+                state === "output-available"
+                  ? (part as { output?: unknown }).output
+                  : undefined;
+              type DisambiguateOption = {
+                id: string;
+                toolName: string;
+                title: string;
+                description?: string;
+              };
+              type DisambiguatePayload = {
+                question?: string;
+                options?: DisambiguateOption[];
+              };
+
+              const outputRecord =
+                output && typeof output === "object"
+                  ? (output as Record<string, unknown>)
+                  : undefined;
+              const structuredPayload =
+                outputRecord?.structuredContent &&
+                typeof outputRecord.structuredContent === "object"
+                  ? (outputRecord.structuredContent as DisambiguatePayload)
+                  : undefined;
+              const metaValue = outputRecord?.meta ?? outputRecord?._meta;
+              const metaRecord =
+                metaValue && typeof metaValue === "object"
+                  ? (metaValue as Record<string, unknown>)
+                  : undefined;
+              const serviceosPayload =
+                metaRecord?.serviceos &&
+                typeof metaRecord.serviceos === "object"
+                  ? (metaRecord.serviceos as DisambiguatePayload)
+                  : undefined;
+              const outputPayload =
+                outputRecord && typeof outputRecord === "object"
+                  ? (outputRecord as DisambiguatePayload)
+                  : undefined;
+              const options =
+                serviceosPayload?.options ??
+                structuredPayload?.options ??
+                outputPayload?.options ??
+                [];
+              const question =
+                serviceosPayload?.question ??
+                structuredPayload?.question ??
+                outputPayload?.question ??
+                "Which workflow should I run?";
+
+              if (state === "output-available") {
+                return (
+                  <div className={widthClass} key={partKey}>
+                    <Tool className="w-full" defaultOpen={true}>
+                      <ToolHeader state={state} type={type} />
+                      <ToolContent>
+                        <div className="space-y-3 px-4 py-3">
+                          <div className="text-sm">{question}</div>
+                          {options.length > 0 && (
+                            <Suggestions>
+                              {options.map((option) => (
+                                <Suggestion
+                                  className="h-auto px-4 py-2"
+                                  key={option.id}
+                                  onClick={() => {
+                                    sendMessage({
+                                      role: "user",
+                                      parts: [
+                                        {
+                                          type: "serviceos-tool-choice",
+                                          toolName: option.toolName,
+                                          optionId: option.id,
+                                        },
+                                        {
+                                          type: "text",
+                                          text: option.title,
+                                        },
+                                      ],
+                                    });
+                                  }}
+                                  suggestion={option.title}
+                                >
+                                  <div className="text-left">
+                                    <div className="font-medium text-sm">
+                                      {option.title}
+                                    </div>
+                                    {option.description ? (
+                                      <div className="text-muted-foreground text-xs">
+                                        {option.description}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </Suggestion>
+                              ))}
+                            </Suggestions>
+                          )}
+                        </div>
+                      </ToolContent>
+                    </Tool>
+                  </div>
+                );
+              }
+
+              return (
+                <div className={widthClass} key={partKey}>
+                  <Tool className="w-full" defaultOpen={true}>
+                    <ToolHeader state={state} type={type} />
+                    <ToolContent>
+                      {(state === "input-available" ||
+                        state === "approval-requested") && (
+                        <ToolInput input={part.input} />
+                      )}
+                    </ToolContent>
+                  </Tool>
+                </div>
+              );
+            }
+
+            if (type.startsWith("tool-")) {
+              const { toolCallId, state } = part as {
+                toolCallId: string;
+                state: string;
+                input?: unknown;
+                output?: unknown;
+                errorText?: string;
+              };
+              const widthClass = "w-[min(100%,560px)]";
+              const outputNode = (part as { output?: unknown }).output ? (
+                <pre className="overflow-x-auto p-3 font-mono text-xs">
+                  {JSON.stringify((part as { output?: unknown }).output, null, 2)}
+                </pre>
+              ) : null;
+
+              return (
+                <div className={widthClass} key={partKey}>
+                  <Tool className="w-full" defaultOpen={true}>
+                    <ToolHeader state={state} type={type} />
+                    <ToolContent>
+                      {(state === "input-available" ||
+                        state === "approval-requested") && (
+                        <ToolInput input={part.input} />
+                      )}
+                      {(part as { output?: unknown }).output ||
+                      (part as { errorText?: string }).errorText ? (
+                        <ToolOutput
+                          errorText={(part as { errorText?: string }).errorText}
+                          output={outputNode}
+                        />
+                      ) : null}
                     </ToolContent>
                   </Tool>
                 </div>

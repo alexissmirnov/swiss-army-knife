@@ -7,13 +7,14 @@ import {
   stepCountIs,
   streamText,
 } from "ai";
+import type { UIMessage } from "ai";
+import { createMCPClient } from "@ai-sdk/mcp";
 import { after } from "next/server";
 import { createResumableStreamContext } from "resumable-stream";
 import { getServerSession } from "@/lib/auth";
 import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
 import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
 import { getLanguageModel } from "@/lib/ai/providers";
-import { getWeather } from "@/lib/ai/tools/get-weather";
 import { isProductionEnvironment } from "@/lib/constants";
 import {
   createStreamId,
@@ -73,6 +74,11 @@ export async function POST(request: Request) {
       return new ChatSDKError("bad_request:activate_gateway").toResponse();
     }
 
+    const mcpUrl = process.env.SERVICEOS_MCP_URL;
+    if (!mcpUrl) {
+      return new ChatSDKError("bad_request:api").toResponse();
+    }
+
     const selectedChatModel = selectedChatModelRaw ?? DEFAULT_CHAT_MODEL;
     const isToolApprovalFlow = Boolean(messages);
 
@@ -94,7 +100,7 @@ export async function POST(request: Request) {
         title: "New chat",
         visibility: selectedVisibilityType,
       });
-      titlePromise = generateTitleFromUserMessage({ message });
+      titlePromise = generateTitleFromUserMessage({ message: message as UIMessage });
     }
 
     const uiMessages = isToolApprovalFlow
@@ -125,7 +131,57 @@ export async function POST(request: Request) {
       });
     }
 
-    const modelMessages = await convertToModelMessages(uiMessages);
+    const toolChoicePartType = "serviceos-tool-choice" as const;
+    let toolChoiceMessage:
+      | { type: typeof toolChoicePartType; toolName: string; optionId: string }
+      | undefined;
+    for (const msg of uiMessages) {
+      if (msg.role !== "user") {
+        continue;
+      }
+      for (const part of msg.parts) {
+        if (part.type === toolChoicePartType) {
+          toolChoiceMessage = part as {
+            type: typeof toolChoicePartType;
+            toolName: string;
+            optionId: string;
+          };
+        }
+      }
+    }
+
+    const selectedToolName = toolChoiceMessage?.toolName;
+    const sanitizedMessages = uiMessages.map((msg) => {
+      if (msg.role !== "user") {
+        return msg;
+      }
+      const filteredParts = msg.parts.filter(
+        (part) => part.type !== toolChoicePartType
+      );
+      if (filteredParts.length === msg.parts.length) {
+        return msg;
+      }
+      return {
+        ...msg,
+        parts: filteredParts,
+      } as ChatMessage;
+    });
+
+    const modelMessages = await convertToModelMessages(sanitizedMessages);
+    if (selectedToolName) {
+      modelMessages.push({
+        role: "system",
+        content: `User selected the workflow tool: ${selectedToolName}. Call this tool next.`,
+      });
+    }
+
+    const mcpClient = await createMCPClient({
+      transport: {
+        type: "http",
+        url: mcpUrl,
+      },
+    });
+    const mcpTools = await mcpClient.tools();
 
     const stream = createUIMessageStream({
       originalMessages: isToolApprovalFlow ? uiMessages : undefined,
@@ -135,13 +191,31 @@ export async function POST(request: Request) {
           system: systemPrompt({ selectedChatModel, requestHints }),
           messages: modelMessages,
           stopWhen: stepCountIs(5),
-          experimental_activeTools: ["getWeather"],
-          tools: {
-            getWeather,
+          toolChoice: selectedToolName
+            ? { type: "tool", toolName: selectedToolName }
+            : undefined,
+          activeTools: selectedToolName
+            ? [selectedToolName]
+            : undefined,
+          prepareStep: ({ steps }) => {
+            const lastStep = steps.at(-1);
+            const hasDisambiguateResult = Boolean(
+              lastStep?.toolResults?.some(
+                (toolResult) => toolResult.toolName === "serviceos_disambiguate"
+              )
+            );
+            if (hasDisambiguateResult) {
+              return { toolChoice: "none", activeTools: [] as string[] };
+            }
+            return {};
           },
+          tools: mcpTools,
           experimental_telemetry: {
             isEnabled: isProductionEnvironment,
             functionId: "stream-text",
+          },
+          onFinish: async () => {
+            await mcpClient.close();
           },
         });
 

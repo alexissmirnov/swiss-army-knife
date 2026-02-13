@@ -3,12 +3,16 @@ from __future__ import annotations
 import json
 import uuid
 from fastapi import FastAPI
+
+from app.mcp_server import mcp
 from app.agent import process_message
 from app.models import ChatRequest, ChatResponse, ToolDecision
 from app.store import SESSION_STORE
 from app.tools import openai_tools_schema
 
-app = FastAPI(title="swiss-army-knife")
+mcp_app = mcp.http_app(path="/", json_response=True, stateless_http=True)
+app = FastAPI(title="swiss-army-knife", lifespan=mcp_app.lifespan)
+app.mount("/mcp", mcp_app)
 
 
 @app.get("/healthz")

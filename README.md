@@ -24,6 +24,39 @@ sak-cli
 uvicorn app.api:app --reload --port 8000
 ```
 
+## MCP + UI (FastMCP)
+
+Backend (FastMCP over HTTP):
+
+```bash
+# Install with uv
+uv sync
+
+# Run API + MCP
+uv run uvicorn app.api:app --reload --port 8000
+```
+
+The MCP endpoint is served at:
+
+```
+http://localhost:8000/mcp
+```
+
+Frontend (Next.js app in `ui/`):
+
+```bash
+cd ui
+pnpm install
+pnpm dev
+```
+
+Create `ui/.env.local` with:
+
+```
+OPENAI_API_KEY=sk-...
+SERVICEOS_MCP_URL=http://localhost:8000/mcp
+```
+
 ## Configuration
 Set confidence threshold (0-1):
 
