@@ -4,6 +4,7 @@ import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   generateId,
+  hasToolCall,
   stepCountIs,
   streamText,
 } from "ai";
@@ -15,6 +16,7 @@ import { getServerSession } from "@/lib/auth";
 import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
 import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
 import { getLanguageModel } from "@/lib/ai/providers";
+import { optionsSelect } from "@/lib/ai/tools/options-select";
 import { isProductionEnvironment } from "@/lib/constants";
 import {
   createStreamId,
@@ -108,12 +110,16 @@ export async function POST(request: Request) {
       : [...convertToUIMessages(messagesFromDb), message as ChatMessage];
 
     const { longitude, latitude, city, country } = geolocation(request);
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const time = new Date().toISOString();
 
     const requestHints: RequestHints = {
       longitude,
       latitude,
       city,
       country,
+      timezone,
+      time,
     };
 
     if (message?.role === "user") {
@@ -131,49 +137,9 @@ export async function POST(request: Request) {
       });
     }
 
-    const toolChoicePartType = "serviceos-tool-choice" as const;
-    let toolChoiceMessage:
-      | { type: typeof toolChoicePartType; toolName: string; optionId: string }
-      | undefined;
-    for (const msg of uiMessages) {
-      if (msg.role !== "user") {
-        continue;
-      }
-      for (const part of msg.parts) {
-        if (part.type === toolChoicePartType) {
-          toolChoiceMessage = part as {
-            type: typeof toolChoicePartType;
-            toolName: string;
-            optionId: string;
-          };
-        }
-      }
-    }
+    // Tool choice part removed, no selectedToolName/sanitization needed
 
-    const selectedToolName = toolChoiceMessage?.toolName;
-    const sanitizedMessages = uiMessages.map((msg) => {
-      if (msg.role !== "user") {
-        return msg;
-      }
-      const filteredParts = msg.parts.filter(
-        (part) => part.type !== toolChoicePartType
-      );
-      if (filteredParts.length === msg.parts.length) {
-        return msg;
-      }
-      return {
-        ...msg,
-        parts: filteredParts,
-      } as ChatMessage;
-    });
-
-    const modelMessages = await convertToModelMessages(sanitizedMessages);
-    if (selectedToolName) {
-      modelMessages.push({
-        role: "system",
-        content: `User selected the workflow tool: ${selectedToolName}. Call this tool next.`,
-      });
-    }
+    const modelMessages = await convertToModelMessages(uiMessages);
 
     const mcpClient = await createMCPClient({
       transport: {
@@ -181,7 +147,17 @@ export async function POST(request: Request) {
         url: mcpUrl,
       },
     });
-    const mcpTools = await mcpClient.tools();
+    // The ToolSet expects an explicit type, and mcpClient.tools() returns tools with inputSchema of type FlexibleSchema<unknown>.
+    // We'll cast the result to any as a temporary fix to satisfy the type requirement. 
+    // This is necessary because the Zod type in the result is generic over <unknown> instead of <never>,
+    // but as the tool interface matches shape, this is safe as long as you control mcpTools.
+    const mcpTools = (await mcpClient.tools()) as any;
+
+    console.log("mcpTools", mcpTools);
+    const tools = {
+      ...mcpTools,
+      ["options-select"]: optionsSelect,
+    };
 
     const stream = createUIMessageStream({
       originalMessages: isToolApprovalFlow ? uiMessages : undefined,
@@ -190,26 +166,20 @@ export async function POST(request: Request) {
           model: getLanguageModel(selectedChatModel),
           system: systemPrompt({ selectedChatModel, requestHints }),
           messages: modelMessages,
-          stopWhen: stepCountIs(5),
-          toolChoice: selectedToolName
-            ? { type: "tool", toolName: selectedToolName }
-            : undefined,
-          activeTools: selectedToolName
-            ? [selectedToolName]
-            : undefined,
+          stopWhen: hasToolCall("options-select"),
           prepareStep: ({ steps }) => {
             const lastStep = steps.at(-1);
-            const hasDisambiguateResult = Boolean(
+            const hasOptionsSelectResult = Boolean(
               lastStep?.toolResults?.some(
-                (toolResult) => toolResult.toolName === "serviceos_disambiguate"
+                (toolResult) => toolResult.toolName === "options-select"
               )
             );
-            if (hasDisambiguateResult) {
+            if (hasOptionsSelectResult) {
               return { toolChoice: "none", activeTools: [] as string[] };
             }
             return {};
           },
-          tools: mcpTools,
+          tools,
           experimental_telemetry: {
             isEnabled: isProductionEnvironment,
             functionId: "stream-text",

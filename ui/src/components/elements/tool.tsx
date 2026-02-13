@@ -2,7 +2,7 @@
 
 import type { ToolUIPart } from "ai";
 import {
-  CheckCircleIcon,
+  CircleCheckIcon,
   ChevronDownIcon,
   CircleIcon,
   ClockIcon,
@@ -22,7 +22,7 @@ export type ToolProps = ComponentProps<typeof Collapsible>;
 
 export const Tool = ({ className, ...props }: ToolProps) => (
   <Collapsible
-    className={cn("not-prose mb-4 w-full rounded-md border", className)}
+    className={cn("not-prose mb-1 w-full rounded-md border", className)}
     {...props}
   />
 );
@@ -48,20 +48,19 @@ const getStatusBadge = (status: ToolUIPart["state"]) => {
     "input-streaming": <CircleIcon className="size-4" />,
     "input-available": <ClockIcon className="size-4 animate-pulse" />,
     "approval-requested": <ClockIcon className="size-4 text-yellow-600" />,
-    "approval-responded": <CheckCircleIcon className="size-4 text-blue-600" />,
-    "output-available": <CheckCircleIcon className="size-4 text-green-600" />,
+    "approval-responded": <CircleCheckIcon className="size-4 text-blue-600" />,
+    "output-available": <CircleCheckIcon className="size-4 text-green-600" />,
     "output-error": <XCircleIcon className="size-4 text-red-600" />,
     "output-denied": <XCircleIcon className="size-4 text-orange-600" />,
   };
 
   return (
-    <Badge
-      className="flex items-center gap-1 rounded-full text-xs"
-      variant="secondary"
+    <div
+      className="flex items-center gap-1 rounded-full text-xs text-muted-foreground"
     >
       {icons[status]}
       <span>{labels[status]}</span>
-    </Badge>
+    </div>
   );
 };
 
@@ -73,18 +72,14 @@ export const ToolHeader = ({
 }: ToolHeaderProps) => (
   <CollapsibleTrigger
     className={cn(
-      "flex w-full min-w-0 items-center justify-between gap-2 p-3",
+      "flex w-full min-w-0 items-center justify-between gap-2 py-1 cursor-pointer group",
       className
     )}
     {...props}
   >
     <div className="flex min-w-0 flex-1 items-center gap-2">
-      <WrenchIcon className="size-4 shrink-0 text-muted-foreground" />
-      <span className="truncate font-medium text-sm">{type}</span>
-    </div>
-    <div className="flex shrink-0 items-center gap-2">
       {getStatusBadge(state)}
-      <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+      <span className="truncate font-medium text-xs text-muted-foreground group-hover:text-foreground transition-colors">{type}</span>
     </div>
   </CollapsibleTrigger>
 );

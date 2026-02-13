@@ -103,6 +103,7 @@ const PurePreviewMessage = ({
           )}
 
           {message.parts?.map((part, index) => {
+            console.log("part", part);
             const { type } = part;
             const key = `message-${message.id}-part-${index}`;
             const partToolCallId =
@@ -170,223 +171,151 @@ const PurePreviewMessage = ({
               }
             }
 
-            if (type === "tool-getWeather") {
-              const { toolCallId, state } = part;
-              const approvalId = (part as { approval?: { id: string } })
-                .approval?.id;
-              const isDenied =
-                state === "output-denied" ||
-                (state === "approval-responded" &&
-                  (part as { approval?: { approved?: boolean } }).approval
-                    ?.approved === false);
-              const widthClass = "w-[min(100%,450px)]";
-
-              if (state === "output-available") {
-                return (
-                  <div className={widthClass} key={partKey}>
-                    <Weather weatherAtLocation={part.output} />
-                  </div>
-                );
-              }
-
-              if (isDenied) {
-                return (
-                  <div className={widthClass} key={partKey}>
-                    <Tool className="w-full" defaultOpen={true}>
-                      <ToolHeader
-                        state="output-denied"
-                        type="tool-getWeather"
-                      />
-                      <ToolContent>
-                        <div className="px-4 py-3 text-muted-foreground text-sm">
-                          Weather lookup was denied.
-                        </div>
-                      </ToolContent>
-                    </Tool>
-                  </div>
-                );
-              }
-
-              if (state === "approval-responded") {
-                return (
-                  <div className={widthClass} key={partKey}>
-                    <Tool className="w-full" defaultOpen={true}>
-                      <ToolHeader state={state} type="tool-getWeather" />
-                      <ToolContent>
-                        <ToolInput input={part.input} />
-                      </ToolContent>
-                    </Tool>
-                  </div>
-                );
-              }
-
-              return (
-                <div className={widthClass} key={partKey}>
-                  <Tool className="w-full" defaultOpen={true}>
-                    <ToolHeader state={state} type="tool-getWeather" />
-                    <ToolContent>
-                      {(state === "input-available" ||
-                        state === "approval-requested") && (
-                        <ToolInput input={part.input} />
-                      )}
-                      {state === "approval-requested" && approvalId && (
-                        <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
-                          <button
-                            className="rounded-md px-3 py-1.5 text-muted-foreground text-sm transition-colors hover:bg-muted hover:text-foreground"
-                            onClick={() => {
-                              addToolApprovalResponse({
-                                id: approvalId,
-                                approved: false,
-                                reason: "User denied weather lookup",
-                              });
-                            }}
-                            type="button"
-                          >
-                            Deny
-                          </button>
-                          <button
-                            className="rounded-md bg-primary px-3 py-1.5 text-primary-foreground text-sm transition-colors hover:bg-primary/90"
-                            onClick={() => {
-                              addToolApprovalResponse({
-                                id: approvalId,
-                                approved: true,
-                              });
-                            }}
-                            type="button"
-                          >
-                            Allow
-                          </button>
-                        </div>
-                      )}
-                    </ToolContent>
-                  </Tool>
-                </div>
-              );
-            }
-
-            if (type === "tool-serviceos_disambiguate") {
-              const { toolCallId, state } = part;
-              const widthClass = "w-[min(100%,560px)]";
+            if (type === "tool-options-select") {
+              const { state } = part as {
+                state: string;
+                input?: unknown;
+                output?: unknown;
+              };
               const output =
                 state === "output-available"
                   ? (part as { output?: unknown }).output
                   : undefined;
-              type DisambiguateOption = {
-                id: string;
-                toolName: string;
-                title: string;
-                description?: string;
-              };
-              type DisambiguatePayload = {
-                question?: string;
-                options?: DisambiguateOption[];
-              };
-
               const outputRecord =
                 output && typeof output === "object"
                   ? (output as Record<string, unknown>)
                   : undefined;
-              const structuredPayload =
-                outputRecord?.structuredContent &&
-                typeof outputRecord.structuredContent === "object"
-                  ? (outputRecord.structuredContent as DisambiguatePayload)
-                  : undefined;
-              const metaValue = outputRecord?.meta ?? outputRecord?._meta;
-              const metaRecord =
-                metaValue && typeof metaValue === "object"
-                  ? (metaValue as Record<string, unknown>)
-                  : undefined;
-              const serviceosPayload =
-                metaRecord?.serviceos &&
-                typeof metaRecord.serviceos === "object"
-                  ? (metaRecord.serviceos as DisambiguatePayload)
-                  : undefined;
-              const outputPayload =
-                outputRecord && typeof outputRecord === "object"
-                  ? (outputRecord as DisambiguatePayload)
-                  : undefined;
-              const options =
-                serviceosPayload?.options ??
-                structuredPayload?.options ??
-                outputPayload?.options ??
-                [];
               const question =
-                serviceosPayload?.question ??
-                structuredPayload?.question ??
-                outputPayload?.question ??
-                "Which workflow should I run?";
+                typeof outputRecord?.question === "string"
+                  ? outputRecord.question
+                  : "Choose an option.";
+              const optionsRaw = Array.isArray(outputRecord?.options)
+                ? outputRecord?.options
+                : [];
+              const options = optionsRaw
+                .map((option, index) => {
+                  if (!option || typeof option !== "object") {
+                    return null;
+                  }
+                  const optionRecord = option as Record<string, unknown>;
+                  const title =
+                    typeof optionRecord.title === "string"
+                      ? optionRecord.title.trim()
+                      : "";
+                  if (!title) {
+                    return null;
+                  }
+                  const value =
+                    typeof optionRecord.value === "string"
+                      ? optionRecord.value.trim()
+                      : title;
+                  if (!value) {
+                    return null;
+                  }
+                  const description =
+                    typeof optionRecord.description === "string"
+                      ? optionRecord.description.trim()
+                      : undefined;
+                  const id =
+                    typeof optionRecord.id === "string"
+                      ? optionRecord.id
+                      : `${partKey}-option-${index + 1}`;
+
+                  return {
+                    id,
+                    title,
+                    value,
+                    description,
+                  };
+                })
+                .filter(
+                  (
+                    option
+                  ): option is {
+                    id: string;
+                    title: string;
+                    value: string;
+                    description: string | undefined;
+                  } => Boolean(option)
+                );
 
               if (state === "output-available") {
                 return (
-                  <div className={widthClass} key={partKey}>
-                    <Tool className="w-full" defaultOpen={true}>
-                      <ToolHeader state={state} type={type} />
-                      <ToolContent>
-                        <div className="space-y-3 px-4 py-3">
-                          <div className="text-sm">{question}</div>
-                          {options.length > 0 && (
-                            <Suggestions>
-                              {options.map((option) => (
-                                <Suggestion
-                                  className="h-auto px-4 py-2"
-                                  key={option.id}
-                                  onClick={() => {
-                                    sendMessage({
-                                      role: "user",
-                                      parts: [
-                                        {
-                                          type: "serviceos-tool-choice",
-                                          toolName: option.toolName,
-                                          optionId: option.id,
-                                        },
-                                        {
-                                          type: "text",
-                                          text: option.title,
-                                        },
-                                      ],
-                                    });
-                                  }}
-                                  suggestion={option.title}
-                                >
-                                  <div className="text-left">
-                                    <div className="font-medium text-sm">
-                                      {option.title}
-                                    </div>
-                                    {option.description ? (
-                                      <div className="text-muted-foreground text-xs">
-                                        {option.description}
-                                      </div>
-                                    ) : null}
+                  <div className="w-full max-w-2xl" key={partKey}>
+                    <div className="space-y-3">
+                      <div className="text-sm font-medium text-foreground">
+                        {question}
+                      </div>
+                      {options.length > 0 ? (
+                        <div className="grid gap-2">
+                          {options.map((option) => (
+                            <button
+                              className="group cursor-pointer relative flex w-full items-start gap-3 rounded-lg border border-border bg-background p-4 text-left transition-all hover:border-foreground/20 hover:bg-accent/50 active:scale-[0.98]"
+                              key={option.id}
+                              onClick={() => {
+                                const selection = option.value
+                                  .trim()
+                                  .slice(0, 2000);
+                                if (!selection) {
+                                  return;
+                                }
+                                sendMessage({
+                                  role: "user",
+                                  parts: [
+                                    {
+                                      type: "text",
+                                      text: selection,
+                                    },
+                                  ],
+                                });
+                              }}
+                              type="button"
+                            >
+                              <div className="flex-1 space-y-1">
+                                <div className="font-medium text-sm leading-tight text-foreground">
+                                  {option.title}
+                                </div>
+                                {option.description ? (
+                                  <div className="text-muted-foreground text-xs leading-relaxed">
+                                    {option.description}
                                   </div>
-                                </Suggestion>
-                              ))}
-                            </Suggestions>
-                          )}
+                                ) : null}
+                              </div>
+                              <div className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+                                <svg
+                                  className="size-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth={2}
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    d="M9 5l7 7-7 7"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                </svg>
+                              </div>
+                            </button>
+                          ))}
                         </div>
-                      </ToolContent>
-                    </Tool>
+                      ) : (
+                        <div className="text-muted-foreground text-sm">
+                          No options available.
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               }
 
-              return (
-                <div className={widthClass} key={partKey}>
-                  <Tool className="w-full" defaultOpen={true}>
-                    <ToolHeader state={state} type={type} />
-                    <ToolContent>
-                      {(state === "input-available" ||
-                        state === "approval-requested") && (
-                        <ToolInput input={part.input} />
-                      )}
-                    </ToolContent>
-                  </Tool>
-                </div>
-              );
+              return null;
             }
 
-            if (type.startsWith("tool-")) {
-              const { toolCallId, state } = part as {
+            if (type.startsWith("dynamic-tool")) {
+              const { toolCallId, state, toolName } = part as {
                 toolCallId: string;
+                toolName: string;
                 state: string;
                 input?: unknown;
                 output?: unknown;
@@ -401,8 +330,8 @@ const PurePreviewMessage = ({
 
               return (
                 <div className={widthClass} key={partKey}>
-                  <Tool className="w-full" defaultOpen={true}>
-                    <ToolHeader state={state} type={type} />
+                  <Tool className="w-full border-none" defaultOpen={false}>
+                    <ToolHeader state={state} type={toolName} />
                     <ToolContent>
                       {(state === "input-available" ||
                         state === "approval-requested") && (
