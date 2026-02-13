@@ -19,6 +19,7 @@ import { getLanguageModel } from "@/lib/ai/providers";
 import { dateSelect } from "@/lib/ai/tools/date-select";
 import { optionsSelect } from "@/lib/ai/tools/options-select";
 import { timeslotSelect } from "@/lib/ai/tools/timeslot-select";
+import { labResultsViewer } from "@/lib/ai/tools/lab-results-viewer";
 import { isProductionEnvironment } from "@/lib/constants";
 import {
   createStreamId,
@@ -89,7 +90,7 @@ function buildActiveTools(
   const chosen = (above.length > 0 ? above : ranked.slice(0, topK)).map(
     (tool) => tool.mcp_name ?? `tool-${tool.name}`
   );
-  const allowed = new Set([...chosen, "options-select", "date-select", "timeslot-select"]);
+  const allowed = new Set([...chosen, "options-select", "date-select", "timeslot-select", "lab-results-viewer"]);
   return Array.from(allowed).filter((name) => name in tools);
 }
 
@@ -237,6 +238,7 @@ export async function POST(request: Request) {
       ["date-select"]: dateSelect,
       ["options-select"]: optionsSelect,
       ["timeslot-select"]: timeslotSelect,
+      ["lab-results-viewer"]: labResultsViewer,
     };
     const activeTools = buildActiveTools(tools, confidenceEval);
 
@@ -251,7 +253,8 @@ export async function POST(request: Request) {
           stopWhen: (steps) =>
             hasToolCall("options-select")(steps) ||
             hasToolCall("date-select")(steps) ||
-            hasToolCall("timeslot-select")(steps),
+            hasToolCall("timeslot-select")(steps) ||
+            hasToolCall("lab-results-viewer")(steps),
           prepareStep: ({ steps }) => {
             const lastStep = steps.at(-1);
             const hasSelectableToolResult = Boolean(
@@ -259,7 +262,8 @@ export async function POST(request: Request) {
                 (toolResult) =>
                   toolResult.toolName === "options-select" ||
                   toolResult.toolName === "date-select" ||
-                  toolResult.toolName === "timeslot-select"
+                  toolResult.toolName === "timeslot-select" ||
+                  toolResult.toolName === "lab-results-viewer"
               )
             );
             if (hasSelectableToolResult) {

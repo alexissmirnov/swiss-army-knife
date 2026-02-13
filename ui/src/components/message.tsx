@@ -578,6 +578,132 @@ const PurePreviewMessage = ({
               return null;
             }
 
+            if (type === "tool-lab-results-viewer") {
+              const { state } = part as {
+                state: string;
+                input?: unknown;
+                output?: unknown;
+              };
+
+              if (state !== "output-available") return null;
+
+              const output = (part as { output?: unknown }).output as
+                | { results: any[]; title: string }
+                | undefined;
+
+              if (!output || !Array.isArray(output.results)) return null;
+
+              const { results, title } = output;
+              // Simple grouping by test name
+              const groups = results.reduce(
+                (acc, r) => {
+                  const name = r.test || "Unknown Test";
+                  if (!acc[name]) acc[name] = [];
+                  acc[name].push(r);
+                  return acc;
+                },
+                {} as Record<string, typeof results>
+              );
+
+              // Sort each group by date desc
+              Object.keys(groups).forEach((key) => {
+                groups[key].sort(
+                  (a, b) =>
+                    new Date(b.date).getTime() - new Date(a.date).getTime()
+                );
+              });
+
+              return (
+                <div className="w-full max-w-3xl space-y-6 rounded-lg" key={partKey}>
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-lg">{title}</h3>
+                  </div>
+
+                  {Object.entries(groups).map(([testName, testResults]) => {
+                    // Prepare data for sparkline (chronological)
+                    const dataForChart = [...testResults]
+                      .sort(
+                        (a, b) =>
+                          new Date(a.date).getTime() -
+                          new Date(b.date).getTime()
+                      )
+                      .map((r) => {
+                         const val = parseFloat(r.value.replace(/[^0-9.]/g, ""));
+                         return isNaN(val) ? 0 : val;
+                      });
+
+                    const min = Math.min(...dataForChart);
+                    const max = Math.max(...dataForChart);
+                    const range = max - min || 1;
+                    
+                    // Simple SVG polyline
+                    const width = 100;
+                    const height = 40;
+                    const points = dataForChart.map((val, i) => {
+                        const x = (i / (dataForChart.length - 1 || 1)) * width;
+                        const y = height - ((val - min) / range) * height;
+                        return `${x},${y}`;
+                    }).join(" ");
+
+
+                    return (
+                      <div key={testName} className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-medium text-md">{testName}</h4>
+                          {dataForChart.length > 1 && (
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">Trend</span>
+                                <svg width={width} height={height} className="overflow-visible">
+                                    <polyline
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        points={points}
+                                        className="text-primary"
+                                    />
+                                    {dataForChart.map((val, i) => {
+                                         const x = (i / (dataForChart.length - 1 || 1)) * width;
+                                         const y = height - ((val - min) / range) * height;
+                                         return (
+                                            <circle cx={x} cy={y} r="2" className="fill-primary" key={i} />
+                                         )
+                                    })}
+                                </svg>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="overflow-hidden rounded-md border border-border">
+                          <table className="w-full text-sm">
+                            <thead className="bg-muted/50 text-left text-xs font-medium text-muted-foreground">
+                              <tr>
+                                <th className="p-2">Date</th>
+                                <th className="p-2">Value</th>
+                                <th className="p-2">Range</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {testResults.map((r, i) => (
+                                <tr key={i} className="hover:bg-muted/20">
+                                  <td className="p-2 whitespace-nowrap text-muted-foreground">
+                                    {r.date}
+                                  </td>
+                                  <td className="p-2 font-medium">{r.value}</td>
+                                  <td className="p-2 text-muted-foreground">
+                                    {r.range || "-"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            }
+
             if (type.startsWith("dynamic-tool")) {
               const { toolCallId, state, toolName } = part as {
                 toolCallId: string;
