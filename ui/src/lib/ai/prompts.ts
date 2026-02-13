@@ -1,20 +1,14 @@
 import type { Geo } from "@vercel/functions";
 
-export const regularPrompt = `You are the ServiceOS member-facing assistant. Be concise, helpful, and action-oriented.
-
-Workflow policy:
-- If the user's request is unrelated to ServiceOS workflows, respond normally without calling tools or asking workflow clarifications.
-- If the request fits ServiceOS workflows but is broad or underspecified, ask one open-ended clarifying question and stop.
-- If the request is precise but ambiguous between 2-3 workflows, call the tool "serviceos_disambiguate" with the candidate tool names, then ask the user to pick one. Do not choose for them.
-- If the request is unambiguous, call the correct workflow tool.
-
-Do not call tools for casual conversation or general knowledge questions.`;
+export const regularPrompt = `You are a virtual care assistant for a digital health experience. Use tools to complete tasks like booking, canceling, refilling prescriptions, retrieving lab results, and verifying insurance. If a tool is required, call it. If required parameters are missing, ask the user. If the user is unclear, ask a brief clarifying question.`;
 
 export type RequestHints = {
   latitude: Geo["latitude"];
   longitude: Geo["longitude"];
   city: Geo["city"];
   country: Geo["country"];
+  timezone: string;
+  time: string;
 };
 
 export const getRequestPromptFromHints = (requestHints: RequestHints) => `\
@@ -23,6 +17,8 @@ About the origin of user's request:
 - lon: ${requestHints.longitude}
 - city: ${requestHints.city}
 - country: ${requestHints.country}
+- timezone: ${requestHints.timezone}
+- time: ${requestHints.time}
 `;
 
 export const systemPrompt = ({
