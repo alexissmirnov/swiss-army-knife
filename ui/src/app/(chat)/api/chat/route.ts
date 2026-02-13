@@ -18,6 +18,7 @@ import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
 import { getLanguageModel } from "@/lib/ai/providers";
 import { dateSelect } from "@/lib/ai/tools/date-select";
 import { optionsSelect } from "@/lib/ai/tools/options-select";
+import { timeslotSelect } from "@/lib/ai/tools/timeslot-select";
 import { isProductionEnvironment } from "@/lib/constants";
 import {
   createStreamId,
@@ -88,7 +89,7 @@ function buildActiveTools(
   const chosen = (above.length > 0 ? above : ranked.slice(0, topK)).map(
     (tool) => tool.mcp_name ?? `tool-${tool.name}`
   );
-  const allowed = new Set([...chosen, "options-select", "date-select"]);
+  const allowed = new Set([...chosen, "options-select", "date-select", "timeslot-select"]);
   return Array.from(allowed).filter((name) => name in tools);
 }
 
@@ -235,6 +236,7 @@ export async function POST(request: Request) {
       ...mcpToolsWithoutMeta,
       ["date-select"]: dateSelect,
       ["options-select"]: optionsSelect,
+      ["timeslot-select"]: timeslotSelect,
     };
     const activeTools = buildActiveTools(tools, confidenceEval);
 
@@ -248,14 +250,16 @@ export async function POST(request: Request) {
           messages: modelMessages,
           stopWhen: (steps) =>
             hasToolCall("options-select")(steps) ||
-            hasToolCall("date-select")(steps),
+            hasToolCall("date-select")(steps) ||
+            hasToolCall("timeslot-select")(steps),
           prepareStep: ({ steps }) => {
             const lastStep = steps.at(-1);
             const hasSelectableToolResult = Boolean(
               lastStep?.toolResults?.some(
                 (toolResult) =>
                   toolResult.toolName === "options-select" ||
-                  toolResult.toolName === "date-select"
+                  toolResult.toolName === "date-select" ||
+                  toolResult.toolName === "timeslot-select"
               )
             );
             if (hasSelectableToolResult) {

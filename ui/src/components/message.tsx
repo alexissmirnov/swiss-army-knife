@@ -50,6 +50,9 @@ const PurePreviewMessage = ({
   const [dateSelections, setDateSelections] = useState<Record<string, string>>(
     {}
   );
+  const [timeslotSelections, setTimeslotSelections] = useState<
+    Record<string, string>
+  >({});
   const [dateInputs, setDateInputs] = useState<Record<string, string>>({});
 
   const attachmentsFromMessage = message.parts.filter(
@@ -453,6 +456,120 @@ const PurePreviewMessage = ({
                           Confirm
                         </button>
                       </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              return null;
+            }
+
+            if (type === "tool-timeslot-select") {
+              const { state } = part as {
+                state: string;
+                input?: unknown;
+                output?: unknown;
+              };
+              const output =
+                state === "output-available"
+                  ? (part as { output?: unknown }).output
+                  : undefined;
+              const outputRecord =
+                output && typeof output === "object"
+                  ? (output as Record<string, unknown>)
+                  : undefined;
+              const question =
+                typeof outputRecord?.question === "string"
+                  ? outputRecord.question
+                  : "Choose a time.";
+              const resultKey =
+                typeof outputRecord?.resultKey === "string"
+                  ? outputRecord.resultKey.trim()
+                  : "";
+              const slots = Array.isArray(outputRecord?.slots)
+                ? (outputRecord?.slots as string[])
+                : [];
+
+              const selectedSlot = timeslotSelections[partKey] ?? "";
+
+              if (state === "output-available") {
+                return (
+                  <div className="w-full max-w-2xl" key={partKey}>
+                    <div className="space-y-3">
+                      <div className="text-sm font-medium text-foreground">
+                        {question}
+                      </div>
+                      {selectedSlot ? (
+                        <div className="text-xs text-muted-foreground">
+                          Selected: {new Date(selectedSlot).toLocaleString()}
+                        </div>
+                      ) : null}
+                      {slots.length > 0 ? (
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                          {slots.map((slot) => {
+                            const date = new Date(slot);
+                            const dateStr = date.toLocaleDateString(undefined, {
+                              weekday: "short",
+                              month: "short",
+                              day: "numeric",
+                            });
+                            const timeStr = date.toLocaleTimeString(undefined, {
+                              hour: "numeric",
+                              minute: "2-digit",
+                            });
+
+                            return (
+                              <button
+                                className={cn(
+                                  "group relative flex w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-border bg-background p-3 text-center transition-all hover:border-foreground/20 hover:bg-accent/50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-border disabled:hover:bg-background disabled:active:scale-100",
+                                  selectedSlot === slot
+                                    ? "border-foreground/30 bg-accent/40"
+                                    : null
+                                )}
+                                key={slot}
+                                onClick={() => {
+                                  if (selectedSlot) {
+                                    return;
+                                  }
+                                  setTimeslotSelections((prev) => ({
+                                    ...prev,
+                                    [partKey]: slot,
+                                  }));
+                                  const payload = resultKey
+                                    ? `${resultKey}: ${slot}`
+                                    : slot;
+                                  sendMessage({
+                                    role: "user",
+                                    parts: [
+                                      {
+                                        type: "text",
+                                        text: payload,
+                                        ui: {
+                                          hidden: true,
+                                          source: "timeslot-select",
+                                        },
+                                      } as any,
+                                    ],
+                                  });
+                                }}
+                                disabled={Boolean(selectedSlot)}
+                                type="button"
+                              >
+                                <div className="font-medium text-sm text-foreground">
+                                  {dateStr}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {timeStr}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-muted-foreground text-sm">
+                          No slots available.
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
