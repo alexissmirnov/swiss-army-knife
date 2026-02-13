@@ -31,11 +31,65 @@ import {
 import type { DBMessage } from "@/db/schema";
 import { ChatSDKError } from "@/lib/errors";
 import type { ChatMessage } from "@/lib/types";
-import { convertToUIMessages, generateUUID } from "@/lib/utils";
+import { convertToUIMessages, generateUUID, getTextFromMessage } from "@/lib/utils";
 import { generateTitleFromUserMessage } from "../../actions";
 import { type PostRequestBody, postRequestBodySchema } from "./schema";
 
 export const maxDuration = 60;
+
+type ConfidenceToolEntry = {
+  name: string;
+  mcp_name?: string;
+  confidence: number;
+};
+
+type ConfidenceEvalResult = {
+  threshold?: number;
+  selected?: ConfidenceToolEntry | null;
+  tools?: ConfidenceToolEntry[];
+  top_k?: number;
+  mode?: string;
+};
+
+const CONFIDENCE_TOOL_NAME = "meta-confidence-eval";
+
+function extractConfidencePayload(result: unknown): ConfidenceEvalResult | null {
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+  const structured = (result as { structuredContent?: unknown }).structuredContent;
+  if (!structured || typeof structured !== "object") {
+    return null;
+  }
+  return structured as ConfidenceEvalResult;
+}
+
+function buildActiveTools(
+  tools: Record<string, unknown>,
+  confidenceEval: ConfidenceEvalResult | null
+): string[] {
+  const allTools = Object.keys(tools);
+  if (!confidenceEval?.tools || confidenceEval.tools.length === 0) {
+    return allTools;
+  }
+
+  const threshold =
+    typeof confidenceEval.threshold === "number" ? confidenceEval.threshold : 0;
+  const topK =
+    typeof confidenceEval.top_k === "number" && confidenceEval.top_k > 0
+      ? confidenceEval.top_k
+      : 5;
+
+  const ranked = [...confidenceEval.tools].sort(
+    (left, right) => right.confidence - left.confidence
+  );
+  const above = ranked.filter((tool) => tool.confidence >= threshold);
+  const chosen = (above.length > 0 ? above : ranked.slice(0, topK)).map(
+    (tool) => tool.mcp_name ?? `tool-${tool.name}`
+  );
+  const allowed = new Set([...chosen, "options-select"]);
+  return Array.from(allowed).filter((name) => name in tools);
+}
 
 function getStreamContext() {
   try {
@@ -151,19 +205,43 @@ export async function POST(request: Request) {
     // We'll cast the result to any as a temporary fix to satisfy the type requirement. 
     // This is necessary because the Zod type in the result is generic over <unknown> instead of <never>,
     // but as the tool interface matches shape, this is safe as long as you control mcpTools.
-    const mcpTools = (await mcpClient.tools()) as any;
+    const mcpTools = (await mcpClient.tools()) as Record<string, any>;
 
-    console.log("mcpTools", mcpTools);
+    let confidenceEval: ConfidenceEvalResult | null = null;
+    const confidenceTool = mcpTools[CONFIDENCE_TOOL_NAME];
+    if (confidenceTool?.execute) {
+      try {
+        const confidenceMessages = uiMessages
+          .map((currentMessage) => ({
+            role: currentMessage.role,
+            content: getTextFromMessage(currentMessage),
+          }))
+          .filter((messageText) => messageText.content.trim().length > 0);
+        const confidenceResult = await confidenceTool.execute({
+          messages: confidenceMessages,
+          mode: "full_conversation",
+          top_k: 5,
+        });
+        confidenceEval = extractConfidencePayload(confidenceResult);
+      } catch (error) {
+        console.warn("confidence eval failed", error);
+      }
+    }
+
+    const { [CONFIDENCE_TOOL_NAME]: _confidenceTool, ...mcpToolsWithoutMeta } =
+      mcpTools;
     const tools = {
-      ...mcpTools,
+      ...mcpToolsWithoutMeta,
       ["options-select"]: optionsSelect,
     };
+    const activeTools = buildActiveTools(tools, confidenceEval);
 
     const stream = createUIMessageStream({
       originalMessages: isToolApprovalFlow ? uiMessages : undefined,
       execute: async ({ writer: dataStream }) => {
         const result = streamText({
           model: getLanguageModel(selectedChatModel),
+          temperature: 0.3,
           system: systemPrompt({ selectedChatModel, requestHints }),
           messages: modelMessages,
           stopWhen: hasToolCall("options-select"),
@@ -177,7 +255,7 @@ export async function POST(request: Request) {
             if (hasOptionsSelectResult) {
               return { toolChoice: "none", activeTools: [] as string[] };
             }
-            return {};
+            return { activeTools };
           },
           tools,
           experimental_telemetry: {

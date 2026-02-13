@@ -39,6 +39,25 @@ function PureMessages({
     status,
   });
 
+  const visibleMessages = messages.filter((message) => {
+    if (message.role !== "user") {
+      return true;
+    }
+    if (!message.parts || message.parts.length === 0) {
+      return true;
+    }
+    return !message.parts.every((part) => {
+      if (!part || typeof part !== "object") {
+        return false;
+      }
+      if ((part as { type?: string }).type !== "text") {
+        return false;
+      }
+      const ui = (part as { ui?: { hidden?: boolean } }).ui;
+      return ui?.hidden === true;
+    });
+  });
+
   return (
     <div className="relative flex-1">
       <div
@@ -46,21 +65,21 @@ function PureMessages({
         ref={messagesContainerRef}
       >
         <div className="mx-auto flex min-w-0 max-w-4xl flex-col gap-4 px-2 py-4 md:gap-6 md:px-4">
-          {messages.length === 0 && <Greeting />}
+          {visibleMessages.length === 0 && <Greeting />}
 
-          {messages.map((message, index) => (
+          {visibleMessages.map((message, index) => (
             <PreviewMessage
               addToolApprovalResponse={addToolApprovalResponse}
               chatId={chatId}
               isLoading={
-                status === "streaming" && messages.length - 1 === index
+                status === "streaming" && visibleMessages.length - 1 === index
               }
               isReadonly={isReadonly}
               key={message.id}
               message={message}
               regenerate={regenerate}
               requiresScrollPadding={
-                hasSentMessage && index === messages.length - 1
+                hasSentMessage && index === visibleMessages.length - 1
               }
               sendMessage={sendMessage}
               setMessages={setMessages}

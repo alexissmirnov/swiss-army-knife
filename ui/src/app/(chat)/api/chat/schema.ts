@@ -3,6 +3,12 @@ import { z } from "zod";
 const textPartSchema = z.object({
   type: z.enum(["text"]),
   text: z.string().min(1).max(2000),
+  ui: z
+    .object({
+      hidden: z.boolean().optional(),
+      source: z.string().min(1).max(80).optional(),
+    })
+    .optional(),
 });
 
 const filePartSchema = z.object({

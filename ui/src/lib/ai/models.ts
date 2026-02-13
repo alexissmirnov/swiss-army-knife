@@ -6,6 +6,7 @@ export type ChatModel = {
   name: string;
   provider: string;
   description: string;
+  temperature: number;
 };
 
 export const chatModels: ChatModel[] = [
@@ -14,12 +15,14 @@ export const chatModels: ChatModel[] = [
     name: "GPT-5.2",
     provider: "openai",
     description: "Best overall reasoning and instruction-following",
+    temperature: 0.7,
   },
   {
     id: "openai/gpt-5-mini",
     name: "GPT-5 Mini",
     provider: "openai",
     description: "Fast and cost-effective for simple tasks",
+    temperature: 0.7,
   },
 ];
 

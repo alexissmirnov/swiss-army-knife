@@ -45,6 +45,9 @@ const PurePreviewMessage = ({
   requiresScrollPadding: boolean;
 }) => {
   const [mode, setMode] = useState<"view" | "edit">("view");
+  const [optionSelections, setOptionSelections] = useState<
+    Record<string, string>
+  >({});
 
   const attachmentsFromMessage = message.parts.filter(
     (part) => part.type === "file"
@@ -239,6 +242,9 @@ const PurePreviewMessage = ({
                   } => Boolean(option)
                 );
 
+              const selectedOptionTitle = optionSelections[partKey] ?? "";
+              const hasSelection = Boolean(selectedOptionTitle);
+
               if (state === "output-available") {
                 return (
                   <div className="w-full max-w-2xl" key={partKey}>
@@ -246,29 +252,51 @@ const PurePreviewMessage = ({
                       <div className="text-sm font-medium text-foreground">
                         {question}
                       </div>
+                      {hasSelection ? (
+                        <div className="text-xs text-muted-foreground">
+                          Selected: {selectedOptionTitle}
+                        </div>
+                      ) : null}
                       {options.length > 0 ? (
                         <div className="grid gap-2">
                           {options.map((option) => (
                             <button
-                              className="group cursor-pointer relative flex w-full items-start gap-3 rounded-lg border border-border bg-background p-4 text-left transition-all hover:border-foreground/20 hover:bg-accent/50 active:scale-[0.98]"
+                              className={cn(
+                                "group relative flex w-full cursor-pointer items-start gap-3 rounded-lg border border-border bg-background p-4 text-left transition-all hover:border-foreground/20 hover:bg-accent/50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-border disabled:hover:bg-background disabled:active:scale-100",
+                                hasSelection && option.title === selectedOptionTitle
+                                  ? "border-foreground/30 bg-accent/40"
+                                  : null
+                              )}
                               key={option.id}
                               onClick={() => {
+                                if (hasSelection) {
+                                  return;
+                                }
                                 const selection = option.value
                                   .trim()
                                   .slice(0, 2000);
                                 if (!selection) {
                                   return;
                                 }
+                                setOptionSelections((prev) => ({
+                                  ...prev,
+                                  [partKey]: option.title,
+                                }));
                                 sendMessage({
                                   role: "user",
                                   parts: [
                                     {
                                       type: "text",
                                       text: selection,
-                                    },
+                                      ui: {
+                                        hidden: true,
+                                        source: "options-select",
+                                      },
+                                    } as any,
                                   ],
                                 });
                               }}
+                              disabled={hasSelection}
                               type="button"
                             >
                               <div className="flex-1 space-y-1">
