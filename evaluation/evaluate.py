@@ -115,7 +115,7 @@ Answer in EXACT JSON format with these keys:
         return result_json.get("parameters_correct", False)
 
     except Exception as e:
-        print(f"[LLM Judge fallback] {e}")
+        # print(f"[LLM Judge fallback] {e}")
         return all(param in collected for param in required)
 
 
